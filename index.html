@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { 
+            margin: 0; 
+            background: #000; 
+            font-family: Arial, sans-serif;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        #canvas-container { 
+            width: 100%; 
+            height: 90vh;
+        }
+        #controls {
+            width: 100%;
+            height: 10vh;
+            background: #1a1a1a;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            padding: 10px;
+            box-sizing: border-box;
+            flex-wrap: wrap;
+        }
+        .color-key {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .color-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            min-width: 100px;
+        }
+        .color-box {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+            flex-shrink: 0;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #444;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #2196F3;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        @media (max-width: 768px) {
+            #controls {
+                height: auto;
+                flex-direction: column;
+                gap: 10px;
+                padding: 15px;
+            }
+            .color-key {
+                justify-content: center;
+            }
+            .color-item {
+                min-width: auto;
+                margin: 5px;
+            }
+            #canvas-container {
+                height: 85vh;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="controls">
+        <div class="toggle-container">
+            <label class="switch">
+                <input type="checkbox" id="planeToggle" checked>
+                <span class="slider"></span>
+            </label>
+            <span>Reference Plane</span>
+        </div>
+        <div class="color-key">
+            <div class="color-item">
+                <div class="color-box" style="background: #00ff00;"></div>
+                <span>Deferent</span>
+            </div>
+            <div class="color-item">
+                <div class="color-box" style="background: #3366ff;"></div>
+                <span>Epicycle</span>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        const scene = new THREE.Scene();
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        
+        function updateRendererSize() {
+            const container = document.getElementById('canvas-container');
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+        }
+        
+        const container = document.getElementById('canvas-container');
+        container.appendChild(renderer.domElement);
+        updateRendererSize();
+
+        let earthAngle = 0;
+        let moonAngle = 0;
+        const earthOrbitRadius = 6.5;
+        const moonOrbitRadius = 1;
+        const moonOrbitTilt = Math.PI / 36;
+        const moonSpeed = 0.03;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+
+        const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        gradient.addColorStop(0, '#1E4877');
+        gradient.addColorStop(1, '#4B9CD3');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#2D5A27';
+        for (let i = 0; i < 20; i++) {
+            const x = Math.random() * canvas.width;
+            const y = Math.random() * canvas.height;
+            const size = 30 + Math.random() * 50;
+            ctx.beginPath();
+            ctx.arc(x, y, size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        const earthTexture = new THREE.CanvasTexture(canvas);
+
+        const earthOrbitGeometry = new THREE.BufferGeometry();
+        const earthOrbitMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+        const earthOrbitPoints = [];
+        const segments = 64;
+        for (let i = 0; i <= segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            earthOrbitPoints.push(
+                new THREE.Vector3(
+                    earthOrbitRadius * Math.cos(angle),
+                    0,
+                    earthOrbitRadius * Math.sin(angle)
+                )
+            );
+        }
+        const earthOrbit = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(earthOrbitPoints),
+            earthOrbitMaterial
+        );
+        scene.add(earthOrbit);
+
+        const moonOrbitGeometry = new THREE.BufferGeometry();
+        const moonOrbitMaterial = new THREE.LineBasicMaterial({ color: 0x3366ff });
+        const moonOrbitPoints = [];
+        for (let i = 0; i <= segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            moonOrbitPoints.push(
+                new THREE.Vector3(
+                    moonOrbitRadius * Math.cos(angle),
+                    0,
+                    moonOrbitRadius * Math.sin(angle)
+                )
+            );
+        }
+        const moonOrbit = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(moonOrbitPoints),
+            moonOrbitMaterial
+        );
+        scene.add(moonOrbit);
+
+        const radiusGeometry = new THREE.BufferGeometry();
+        const radiusMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
+        const radiusLine = new THREE.Line(radiusGeometry, radiusMaterial);
+        scene.add(radiusLine);
+
+        const planeGeometry = new THREE.PlaneGeometry(20, 20);
+        const planeMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0x444444, 
+            transparent: true, 
+            opacity: 0.1,
+            side: THREE.DoubleSide 
+        });
+        const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+        plane.rotation.x = Math.PI / 2;
+        scene.add(plane);
+
+        const gridHelper = new THREE.GridHelper(20, 20);
+        gridHelper.material.opacity = 0.1;
+        gridHelper.material.transparent = true;
+        scene.add(gridHelper);
+
+        const trailGeometry = new THREE.BufferGeometry();
+        const trailMaterial = new THREE.LineBasicMaterial({ color: 0x888888 });
+        const trailPoints = [];
+        const maxTrailPoints = 100;
+        const trail = new THREE.Line(trailGeometry, trailMaterial);
+        scene.add(trail);
+
+        const planeToggle = document.getElementById('planeToggle');
+        planeToggle.addEventListener('change', (e) => {
+            plane.visible = e.target.checked;
+            gridHelper.visible = e.target.checked;
+        });
+
+        const sunGeometry = new THREE.SphereGeometry(2, 32, 32);
+        const sunMaterial = new THREE.MeshStandardMaterial({ 
+            map: earthTexture,
+            roughness: 0.8,
+            metalness: 0.1
+        });
+        const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+        scene.add(sun);
+
+        const sunLight = new THREE.PointLight(0xffffff, 1, 100);
+        scene.add(sunLight);
+
+        const earth = new THREE.Object3D();
+        scene.add(earth);
+
+        const moonGeometry = new THREE.SphereGeometry(0.3, 32, 32);
+        const moonMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xcccccc,
+            roughness: 0.5,
+            metalness: 0.1
+        });
+        const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+        scene.add(moon);
+
+        camera.position.z = 10;
+
+        let isMouseDown = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let rotation = { x: 0, y: 0 };
+
+        document.addEventListener('mousedown', () => isMouseDown = true);
+        document.addEventListener('mouseup', () => isMouseDown = false);
+        document.addEventListener('mousemove', (e) => {
+            if (isMouseDown) {
+                const deltaMove = {
+                    x: e.offsetX - previousMousePosition.x,
+                    y: e.offsetY - previousMousePosition.y
+                };
+                rotation.x += deltaMove.y * 0.005;
+                rotation.y += deltaMove.x * 0.005;
+
+                camera.position.x = 10 * Math.sin(rotation.y);
+                camera.position.z = 10 * Math.cos(rotation.y);
+                camera.position.y = 10 * Math.sin(rotation.x);
+                camera.lookAt(scene.position);
+            }
+            previousMousePosition = {
+                x: e.offsetX,
+                y: e.offsetY
+            };
+        });
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            sun.rotation.y += 0.005;
+            
+            earthAngle += 0.01;
+            earth.position.x = Math.cos(earthAngle) * earthOrbitRadius;
+            earth.position.z = Math.sin(earthAngle) * earthOrbitRadius;
+
+            moonOrbit.position.copy(earth.position);
+            moonOrbit.rotation.y = earthAngle;
+
+            const moonX = moonOrbitRadius * Math.cos(moonAngle);
+            const moonZ = moonOrbitRadius * Math.sin(moonAngle);
+            const moonY = Math.sin(moonAngle) * moonOrbitRadius * Math.sin(moonOrbitTilt);
+            
+            moonAngle += moonSpeed;
+            
+            moon.position.x = earth.position.x + moonX;
+            moon.position.z = earth.position.z + moonZ;
+            moon.position.y = earth.position.y + moonY;
+
+            const radiusPoints = [
+                new THREE.Vector3(earth.position.x, earth.position.y, earth.position.z),
+                new THREE.Vector3(moon.position.x, moon.position.y, moon.position.z)
+            ];
+            radiusGeometry.setFromPoints(radiusPoints);
+
+            trailPoints.push(new THREE.Vector3(moon.position.x, moon.position.y, moon.position.z));
+            if (trailPoints.length > maxTrailPoints) {
+                trailPoints.shift();
+            }
+            trailGeometry.setFromPoints(trailPoints);
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        let touchStartX, touchStartY;
+        
+        container.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }, false);
+
+        container.addEventListener('touchmove', (e) => {
+            if (!touchStartX || !touchStartY) return;
+
+            const touchEndX = e.touches[0].clientX;
+            const touchEndY = e.touches[0].clientY;
+
+            const deltaX = touchEndX - touchStartX;
+            const deltaY = touchEndY - touchStartY;
+
+            rotation.y += deltaX * 0.005;
+            rotation.x += deltaY * 0.005;
+
+            camera.position.x = 10 * Math.sin(rotation.y);
+            camera.position.z = 10 * Math.cos(rotation.y);
+            camera.position.y = 10 * Math.sin(rotation.x);
+            camera.lookAt(scene.position);
+
+            touchStartX = touchEndX;
+            touchStartY = touchEndY;
+        }, false);
+
+        container.addEventListener('touchend', () => {
+            touchStartX = null;
+            touchStartY = null;
+        }, false);
+
+        window.addEventListener('resize', () => {
+            updateRendererSize();
+        });
+    </script>
+</body>
+</html>
